@@ -2,10 +2,8 @@
 
 # pisound-btn daemon for the Pisound button.
 #
-# DEPRECATED ! This is the "old" common script. It is replaced by
-# /usr/lib/patchbox/scripts/common.sh. It will remain here however
-# to avoid breaking old installations that might still try to git
-# clone this repository
+# This script is included by patchbox common.sh when present, and
+# provides support for the pisound LED.
 #
 # Copyright (C) 2017  Vilniaus Blokas UAB, https://blokas.io/pisound
 #
@@ -24,10 +22,6 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-log() {
-	echo `date +"%F.%T"`: $*
-}
-
 PISOUND_MIDI_DEVICE=`amidi -l | grep pisound | egrep -o hw:[0-9]+,[0-9]+`
 
 if [ -z $PISOUND_MIDI_DEVICE ]; then
@@ -40,16 +34,12 @@ PISOUND_LED_FILE="/sys/kernel/pisound/led"
 
 # Takes an unsigned integer value, [0;255] for flash duration.
 if [ -e $PISOUND_LED_FILE ]; then
-	flash_leds() {
+	pisound_flash_leds() {
 		sudo sh -c "echo $1 > $PISOUND_LED_FILE"
 	}
 elif [ ! -z $PISOUND_MIDI_DEVICE ]; then
-	flash_leds() {
+	pisound_flash_leds() {
 		amidi -S "f0 f7" -p $PISOUND_MIDI_DEVICE 2> /dev/null
-	}
-else
-	flash_leds() {
-		log "Blink."
 	}
 fi
 
@@ -57,7 +47,7 @@ fi
 # A third optional argument can be provided - a temporary file for inner process id storage.
 # It allows starting multiple 'blink' processes in parallel, and controlling them individually.
 # Example value - /tmp/.example-blink-pid
-periodic_led_blink() {
+pisound_periodic_led_blink() {
 	local PID_FILE
 	if [ "$#" -eq 3 ]; then
 		PID_FILE=$3
@@ -74,7 +64,7 @@ periodic_led_blink() {
 		else
 			if [ -e $PID_FILE ]; then
 				# Stop blinking before reconfiguring.
-				periodic_led_blink 0 0 $3
+				pisound_periodic_led_blink 0 0 $3
 			fi
 			(
 				(while true; sleep $2; do flash_leds $1; done) &
@@ -83,43 +73,5 @@ periodic_led_blink() {
 		fi
 	else
 		echo 2 or 3 arguments must be specified! 1>&2
-	fi
-}
-
-# Waits until the given process terminates.
-wait_process() {
-	if [ "$#" -ne 1 ]; then
-		echo 1 argument must be specified! 1>&2
-		return
-	fi
-	while true; do
-		wait $1
-		kill -0 $1 2> /dev/null || break
-	done
-}
-
-# Find first X display.
-find_display() {
-	# If HDMI display is connected, try default :0 manually.
-	if [ "$(tvservice -n 2>&1)" != "[E] No device present" ] && XAUTHORITY=/home/pi/.Xauthority DISPLAY=:0 xhost > /dev/null 2>&1; then
-		echo :0
-		return 0
-	fi
-
-	# HDMI display was unavailable, try finding another display (such as vnc) to use.
-	display=$(ps ea | grep -Po "DISPLAY=[\.0-9A-Za-z:]* " | sort -u | head -n 1 | grep -oe :.*)
-	if [ -z $display ]; then
-		if [ -z $PISOUND_DISPLAY ]; then
-			# Not found.
-			return 1
-		else
-			# Fallback to value set in PISOUND_DISPLAY
-			echo $PISOUND_DISPLAY
-			return 0
-		fi
-	else
-		# Found something.
-		echo $display
-		return 0
 	fi
 }
